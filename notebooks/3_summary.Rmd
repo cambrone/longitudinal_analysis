@@ -1,0 +1,830 @@
+---
+title: "Comparing Fixed Effects, Random Effects and Within-Between Random Effect Models"
+author: "Andres Cambronero"
+date: "2025-10-20"
+output: html_document
+---
+_**I have been reading about methods to analyze longitudinal data and decided to practice using them. This post summarizes my learning. If something is wrong, please reach out. I am always looking to improve.**_
+
+Educational materials often present fixed effects (FE) and random effects (RE) models as common approaches to analyze longitudinal data. Both methods address non-independent observations by controlling for subject-specific heterogeneity. To decide which method to use, authors frequently present a series of guidelines. For example, [Frees](https://instruction.bus.wisc.edu/jfrees/jfreesbooks/Longitudinal%20and%20Panel%20Data/Book/Chapters/FreesFinal.pdf) recommends RE if a study seeks to generalize beyond the collected sample. [Hicks](https://econ.pages.code.wm.edu/407/notes/docs/panel_re.html) suggests FE if analysts suspect dependence between unobserved heterogeneity and the model predictors. Although important, these guidelines miss a critical point: FE and RE estimate different quantities. FE isolate the within-subject effects, while RE combine the within- and between-subject effects into a single estimate. For this reason, when choosing between FE and RE, analysts should select a model whose estimates will appropriately address their research question.
+
+To explore differences in estimates produced by FE and RE, this post fits several models to a single longitudinal dataset. Using data from the Framingham study, the post examines estimates a researcher might obtain from these methods when answering: "what is the association between taking blood pressure medication and systolic blood pressure?" Depending on what aspect of the question an analyst wants to hone in on, FE or RE might both be appropriate. Nonetheless, each method produces different estimates and these estimates vary meaningfully in interpretation. Which method is most appropriate, depends on the effects analysts want to estimate and the assumptions they are willing to make.
+
+The post is organized in the following way. First,  key differences between OLS, FE, RE and REWB are discussed. This post fits variations of these models. Second, the data used in the post is reviewed. Third, the research question described above is discussed. Fourth, a summary of the models' coefficients is presented. Finally, the models' predictive performance is summarized. 
+
+<br>
+
+## Model Frameworks
+
+This section provides an overview of the models considered in this post. This section relies heavily on [Bell](https://link.springer.com/article/10.1007/s11135-018-0802-x).
+
+<br>
+
+#### Ordinary Least Squares (OLS)
+
+While OLS is not recommended when analyzing longitudinal data, it serves as a baseline against which to judge other methods in this post. In the context of repeated measures, a simple OLS model would be: 
+
+$$
+y_{it} = \beta_0 +\beta_1^{OLS}x_{it} + \beta_2^{OLS}z_{i}+ e_{it}
+$$
+where $y_{it}$ is the response variable for subject $i$ at time $t$. $x_{it}$ is a time-varying predictor such as age for subject $i$ at time $t$. $z_i$ is a time-invariant predictor like sex. The error $e_{it}$ is assumed to follow $N(0,\sigma^2)$. 
+
+The main reason OLS is not recommended when analyzing longitudinal data is its assumption of independent observations. This assumption is violated when working with repeated measures because records from a single subject are likely more similar to each other than records of other subjects. Without accounting for this correlation, OLS can lead to standard errors that are too small. Given this limitation, other methods are preferred when working with longitudinal data.
+ 
+ <br>
+ 
+#### Fixed Effects (FE)
+
+A common alternative to OLS is FE. Using the demeaned specification, a FE model would be:
+
+$$
+(y_{it} - \bar y_i) = \beta_1^{FE} (x_{it} - \bar x_i) + e_{it}
+$$
+where $\bar y_i$  and $\bar x_i$ are the mean response and mean time-varying predictor respectively for subject $i$. The error $e_{it}$ follows a $N(0,\sigma^2)$. Note that a) the response variable is $(y_{it} - \bar y_i)$, not simply $y_{it}$, b) similarly, $(x_{it} - \bar x_i)$ is the transformed predictor, and c) $z_i$ is no longer in the model. More on these points below. 
+
+FE provides several benefits over OLS. First, FE explicitly deals with non-independence of observations by demeaning each subject's response and predictors. By doing this operation, FE recognizes the need for each subjects' responses and predictors to be clustered around a common mean. Second, FE allows for a less biased estimation of $\beta_1$. Demeaning accounts for all unobserved time-invariant individual effects that might have otherwise biased $\beta_1$ in OLS. Nonetheless, $\beta_1^{FE}$ can still suffer from time-varying omitted variable bias. 
+
+Although an improvement over OLS, FE is a tool with a specific use: it only estimates the within-subject effect. Due to the model demeaning, any time-invariant information available (like $z_i$ in the prior model) cancels out and its effect cannot be estimated. Additionally, $\beta_1^{FE}$ now has a very specific interpretation. It represents the average change in $y$ associated with a one-unit increase in $x$ for single subject. In contrast, $\beta_{OLS}$ is the change in $y$ associated with a one-unit change in x across the sample. If an analyst is interested exclusively in estimating within-subject effects and comfortable with excluding time-varying predictors, FE can be an appropriate model choice.
+
+<br>
+
+#### Random Effects (RE)
+
+Another common alternative to OLS is RE. A RE model with random slopes and intercepts would be:
+
+$$
+y_{it} = \beta_0 +\beta_1^{RE}x_{it} + \beta_2^{RE}z_{i}+ \alpha_{i0} + \alpha_{i1}x_{it} + e_{it}
+$$
+where $\alpha_{i0}$ is the random intercept for each subject and $\alpha_{i1}$ is the random slope associated with $x$ for each subject. The coefficient $\beta_2^{RE}$ is the effect of the time-invariant predictor $z_i$.
+
+Like FE, RE deal with non-independence of observations by accounting for heterogeneity among subjects through $\alpha_{i0}$ (and $\alpha_{i1}$). However, instead of viewing $\alpha_{i0}$ as fixed parameters to be estimated, RE considers these parameters random draws from a normal distribution, where $\alpha_0, \alpha_1 \sim N(0,\Sigma)$. Due to this common distribution, these estimates experience "shrinkage"; a behavior in which RE estimates fall between estimates of OLS and FE. One benefit of this pattern is that RE estimates are less likely to overfit the training sample compared to FE. 
+
+Despite their similarities, FE and RE are distinct in important ways. First, RE allows estimation of the effect of $z_i$. Second, it allows varying slopes on $x$ across subjects, providing greater flexibility than FE. Third, $\beta_1^{RE}$ no longer represents the within-subject effect. In fact, $\beta_1^{RE}$ will be the weighted average of the within- and  between-subject effect, which can be difficult to interpret. For an analyst interested in time-varying predictors or drawing inferences about between-subject effects, RE might be better approach than FE.
+
+<br>
+
+#### Within-Between Random Effects (REWB)
+
+The Within-Between Random Effects model bridges some of the gaps between FE and RE. In a single model, it isolates the within- and between-subject effects into their own coefficients and allows for the estimation of time-invariant effects. This model is: 
+
+$$
+y_{it} =\beta_0+\beta_{1W}(x_{it}-\bar x_i)+\beta_{2B}\bar x_i+\beta_3 z_i+\alpha_{i0}+\alpha_{i1}(x_{it}-\bar x_i) + e_{i0}
+$$
+
+Here, $\beta_{1W}$ is the within-subject estimate, which will be identical to the FE estimate. Like in FE, $\beta_{1W}$ is unaffected by unobserved time-invariant heterogeneity.  $\beta_{2B}$ represents the between subject-effect, meaning the average change in $y$ between subjects. Like RE, REWB can estimate the effect of time-invariant $z_i$. Finally, REWB provides similar flexibility as RE. It  accounts for subject heterogeneity through random intercepts $\alpha_{i0}$ and random slopes $\alpha_{i1}$. 
+
+<br>
+
+## Data: Description
+
+Before discussing the models that were fitted, this section reviews the data used for this exercise.
+
+The data is a subset of the Framingham Heart Study, a prospective study on the causes of cardiovascular disease. The sample contained information on 4,434 participants collected during three examination periods, ranging from 1956 to 1968.
+
+The models considered examine the relationship between systolic blood pressure and taking blood pressure medication. The dependent variable was SYSBP (systolic blood pressure,  the mean of the last two of three measurements). The main relationship of interest is its association with BPMEDS (use of anti-hypertensive medication at exam, BPMEDS=1 or 0). Other time-varying control variables include CIGPDAY (number of cigarettes smoked each day), AGE (age at exam in years), BMI (Body Mass Index),  TOTCHOL (Total Cholesterol) and GLUCOSE (serum glucose). The time-invariant predictors are SEX (recoded to 1=women, 0=men), Education (1=0-11 years, 2=Highschool, 3=some college, 4=college or more). Subjects with complete cases are analyzed. The final sample contained 4,214 subjects, with 39% of subjects seen in all 3 periods, 42% seen twice and 18% seen only once. While complete case analysis can introduce biases, these concerns are not explored in this post.
+
+Although the main goal of the post is to compare the models' estimated coefficients, the post also examines the models' out-of-sample predictions. To do so,the sample was separated into training and test sets based on subject's identification number using a 90/10 split respectively. Model performance in training was assessed using AIC and RMSE. The performance on the test set was assessed using RMSE only. 
+
+Below is a brief summary of the data analyzed.
+
+```{r dataclean, include=FALSE, fig.cap='Table 1'}
+set.seed(123)
+
+#load libraries
+library(car)
+library(kableExtra)
+library(corrplot)
+library(clubSandwich)
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+library(lattice)
+library(lme4)
+library(lmtest)
+library(plm)
+library(sandwich)
+library(nlme)
+library(sjPlot)
+library(tibble)
+library(tidyr)
+library(modelsummary)
+
+#####################################################################################################################
+#  Data Preparation 
+#####################################################################################################################
+#load dataset
+df_frmg<-read.csv("~/Desktop/stats_projects/longitudinal_analysis/data/frmgham2.csv")
+colnames(df_frmg) <- toupper(colnames(df_frmg))
+df_frmg$RANDID = as.factor(df_frmg$RANDID)
+
+
+#for this simple analysis, keep complete cases only
+#variables chosen partly xbased on https://www.ahajournals.org/doi/10.1161/01.hyp.37.2.187
+nrow(df_frmg)
+df_frmg <- na.omit(df_frmg[,c("RANDID", 
+                              "PERIOD",
+                              "SYSBP",
+                              "CIGPDAY",
+                              "AGE",
+                              "BMI",
+                              "TOTCHOL",
+                              "SEX",
+                              'GLUCOSE',
+                              "BPMEDS",
+                              "EDUC")])
+nrow(df_frmg)
+
+length(unique(df_frmg$RANDID))
+
+# number of records per subject
+df_frmg %>%
+  group_by(RANDID) %>%
+  summarise(count = n()) %>%
+  group_by(count) %>%
+  summarise(count = n()/length(unique(df_frmg$RANDID))) 
+
+
+
+#original 1=male, 2=female
+df_frmg$SEX2 = ifelse(df_frmg$SEX==1, 0, 1)
+
+# count number of observations per subject. 
+# some subjects appear in period 1 and 3 when they only have 2 observations. The ordering doenst impact model estimatoion
+n_periods <- df_frmg %>%
+  group_by(RANDID) %>%
+  summarise(period_count = n())
+
+print(paste("% of subjects with 1 obs:", nrow(n_periods[n_periods$period_count==1,])/nrow(n_periods)))
+
+nrow(df_frmg)
+df_frmg <- left_join(df_frmg, n_periods, by="RANDID") 
+nrow(df_frmg)
+
+# Count if someone is always BPMEDS=0, =1 or changes throughout
+temp <- df_frmg %>%
+  group_by(RANDID) %>%
+  summarise(mean_BPMED = mean(BPMEDS),
+            max_BPMED = max(BPMEDS)) 
+
+no_meds <- temp[temp$mean_BPMED==0,]
+yes_meds <- temp[temp$mean_BPMED==1,]
+some_meds <- temp[(temp$mean_BPMED!=0) & 
+                  (temp$mean_BPMED!=1),]
+
+print(paste('% of subjects with no BP meds: ', length(unique(no_meds$RANDID))/length(unique(temp$RANDID)))) 
+print(paste('% of subjects with yes BP meds: ', length(unique(yes_meds$RANDID))/length(unique(temp$RANDID)))) 
+print(paste('% of subjects with some BP meds: ', length(unique(some_meds$RANDID))/length(unique(temp$RANDID)))) 
+
+#Merge with df_frmg
+no_meds$no_meds <- 1
+no_meds <- no_meds[,c("RANDID","no_meds")]
+
+yes_meds$yes_meds <- 1
+yes_meds <- yes_meds[,c("RANDID","yes_meds")]
+
+some_meds$some_meds <- 1
+some_meds <- some_meds[,c("RANDID","some_meds")]
+
+nrow(df_frmg)
+df_frmg<- left_join(df_frmg, no_meds, by="RANDID")
+df_frmg<- left_join(df_frmg, yes_meds, by="RANDID")
+df_frmg<- left_join(df_frmg, some_meds, by="RANDID")
+nrow(df_frmg)
+
+df_frmg$no_meds <- ifelse(is.na(df_frmg$no_meds), 0, df_frmg$no_meds)
+df_frmg$yes_meds <- ifelse(is.na(df_frmg$yes_meds), 0, df_frmg$yes_meds)
+df_frmg$some_meds <- ifelse(is.na(df_frmg$some_meds), 0, df_frmg$some_meds)
+
+# is the direction always no meds -> yes meds? 87% yes
+# for each subject choose their latest period
+max_rows_by_group <- df_frmg %>%
+  group_by(RANDID) %>%
+  slice(which.max(PERIOD))
+
+#for subjects with some meds, is their BPMEDS in last period ==1 
+max_rows_by_group <- max_rows_by_group[max_rows_by_group$some_meds==1,]
+mean(max_rows_by_group$BPMEDS)
+
+# Create column with direction of BPMEDS
+no_yes_meds<- max_rows_by_group[max_rows_by_group$BPMEDS==1,] #these subjects start with 0 then end in 1
+no_yes_meds$no_yes_meds<- 1
+
+no_yes_meds <- no_yes_meds[,c("RANDID","no_yes_meds")]
+
+nrow(df_frmg)
+df_frmg<- left_join(df_frmg, no_yes_meds, by="RANDID")
+nrow(df_frmg)
+
+df_frmg$no_yes_meds <- ifelse(is.na(df_frmg$no_yes_meds), 0, df_frmg$no_yes_meds)
+
+df_frmg$yes_no_meds <- ifelse((df_frmg$some_meds==1) &
+                                (df_frmg$no_yes_meds==0), 1, 0)
+
+print(paste('no meds', mean(df_frmg$no_meds)))
+print(paste('yes meds', mean(df_frmg$yes_meds)))
+print(paste('no_yes meds', mean(df_frmg$no_yes_meds)))
+print(paste('yes_no meds', mean(df_frmg$yes_no_meds)))
+
+df_frmg$status_meds <-NA 
+df_frmg$status_meds <- ifelse(df_frmg$no_meds==1,'no_change_meds', df_frmg$status_meds )
+df_frmg$status_meds <- ifelse(df_frmg$yes_meds==1,'no_change_meds', df_frmg$status_meds)
+df_frmg$status_meds <- ifelse(df_frmg$yes_no_meds==1,'yes_no_meds', df_frmg$status_meds)
+df_frmg$status_meds <- ifelse(df_frmg$no_yes_meds==1,'no_yes_meds', df_frmg$status_meds)
+df_frmg$status_meds <- factor(df_frmg$status_meds )
+
+
+#####################################################################################################################
+# Create Test sample
+#####################################################################################################################
+sample_test_id <-sample(df_frmg$RANDID, length(unique(df_frmg$RANDID))*0.1, replace=FALSE)
+
+df_train <- df_frmg[!(df_frmg$RANDID %in% sample_test_id),]
+df_test <- df_frmg[(df_frmg$RANDID %in% sample_test_id),]
+```
+
+
+```{r df_train_summary, echo=FALSE, message=FALSE,  warning=FALSE}
+# Example: summarize multiple columns in a dataset
+vars <- c("SYSBP", "CIGPDAY", "AGE", "BMI",
+          "TOTCHOL", "GLUCOSE", "BPMEDS", 
+          "SEX", "EDUC")
+
+summary_table <- df_train %>%
+  summarise(across(all_of(vars), 
+                   list(
+                     min = ~min(.x, na.rm = TRUE),
+                     p25 = ~quantile(.x, 0.25, na.rm = TRUE),
+                     median = ~quantile(.x, 0.50, na.rm = TRUE),
+                     p75 = ~quantile(.x, 0.75, na.rm = TRUE),
+                     max = ~max(.x, na.rm = TRUE),
+                     mean = ~mean(.x, na.rm = TRUE)
+                   ), 
+                   .names = "{.col}_{.fn}")) %>%
+  pivot_longer(everything(),
+               names_to = c("variable", "stat"),
+               names_sep = "_",
+               values_to = "value") %>%
+  pivot_wider(names_from = stat, values_from = value)
+
+summary_table %>%
+  kable(digits = 2, caption = "Table 1: Summary Training") %>%
+  kable_styling(full_width = FALSE)
+```
+
+<br>
+
+## Data: What effects are analysts interested in estimating?
+
+This section lays out different patterns between systolic blood pressure and taking blood pressure medication present in the data. For an analyst interested in exploring the association between blood pressure medication and systolic blood pressure, their choice of FE, RE or REWB should be based on what aspect of the association they would like to hone in on. 
+
+Figure 1 shows the relationship between SYSBP and BPMEDS for different groups of subjects. The graph plots the average SYSBP on the y-axis against BPMEDS status on the x-axis. Each line represents a group of subjects. These groups are a) no_change_meds subjects (always BPMEDS=0 or BPMEDS=1 throughout the study), 2) no_yes_meds subjects (status changed from BPMEDS=0 to BPMEDS=1 during the study), 3) yes_no_meds subjects (status changed from BPMEDS=1 to BPMEDS=0 during the study).
+
+It's clear from Figure 1 that different associations exist between BPMEDS and SYSBP. The graph shows that the overall association between BPMEDS and SYSBP is positive (black line). On average, SYSBP is 133 when BPMEDS=0 and 161 when BPMEDS=1. However, between subjects whose BPMEDS status never changed (ie comparing subjects with BPMEDS=0 to subjects with BPMEDS=1 throughout the study), the difference in SYSBP is larger than the sample average would suggest, as demonstrated by the steeper slope of the purple line. In contrast, subjects who started as BPMEDS=0 and then changed to BPMEDS=1 (green line) have a smaller increase in SYSBP than the overall difference between BPMEDs=0 and BPMEDS=1. Furthermore, subjects who started as BPMEDS=1 and then changed to BPMEDS=0 (red line) actually showed a increase in SYSBP throughout the study. Depending on which of these relationships an analyst would like to focus, FE, RE or REWB could be an appropriate model choice. 
+
+```{r graph,  echo=FALSE, message=FALSE, warning=FALSE, fig.align="center", fig.cap="Figure 1"}
+#####################################################################################################################
+# Within Training create chart with BPMED per group. Univariate view
+#####################################################################################################################
+# BPMEDS a) no meds entire time, b) yes meds entire time, c) no_yes_meds, d) yes_no_meds
+summary_df <- df_train %>%
+  group_by(status_meds, BPMEDS) %>%
+  summarise(mean_sysbp = mean(SYSBP),
+            count_id = n_distinct(RANDID),
+            .groups = "drop")
+
+# Calculate overall means for BPMEDS = 0 and 1
+overall_df <- df_train %>%
+  group_by(BPMEDS) %>%
+  summarise(mean_sysbp = mean(SYSBP),
+            count_id = n_distinct(RANDID),
+            .groups = "drop") %>%
+  mutate(status_meds = "overall")
+
+summary_df <- bind_rows(summary_df, overall_df)
+
+ggplot(summary_df, aes(x = factor(BPMEDS),
+                       y = mean_sysbp, 
+                       group = status_meds,
+                       color = status_meds, 
+                       size = count_id)) +
+  geom_point() +
+  geom_line(data = subset(summary_df, status_meds == "no_yes_meds"), linewidth=1, color="#1b9e77", linetype='dashed') +
+  geom_line(data = subset(summary_df, status_meds == "yes_no_meds"), linewidth=1, color='#d95f02', linetype='dashed') +
+  geom_line(data = subset(summary_df, status_meds == "no_change_meds"), linewidth=1, color="#7570b3", linetype='dashed') +
+  geom_line(data = subset(summary_df, status_meds == "overall"), linewidth=2, color='black', linetype='solid') +
+  scale_x_discrete(labels = c("0" = "BPMEDS=0", "1" = "BPMEDS=1"))+
+  scale_color_manual(values = c(
+    "no_yes_meds" = "#1b9e77",
+    "yes_no_meds" = "#d95f02",
+    "no_change_meds" = "#7570b3",
+    "overall" = "black" )
+    )
+```
+
+Below is a review of what each model would allow the analyst to infer: 
+
+* **OLS**: Given the longitudinal nature of the data, OLS is likely not an appropriate model choice. It would provide an overall estimate of the average change in SYSBP between records where BPMEDS=0 and BPMEDS=1. Given that the model ignores the longitudinal data structure, the SE will likely be too small. 
+
+* **FE**: would provide an estimate of the average change in SYSBP that a subject would expect with a change in BPMEDS status. This estimate is based on the subjects in the sample who actually experienced a change in BPMEDS throughout the study. Since not all subjects experienced BPMEDS change, the estimate would be based on a small sample.
+
+* **RE**: would provide an average change in SYSBP associated with change in BPMEDS. This estimate assumes that the within-subject and between-subject effect is the same. Based on the slopes of no_change_meds and the other groups shown in the Figure 1, this assumption is likely not true. The resulting estimate could obfuscate patterns that might be of interest in characterizing the relationship between BPMEDS and SYSBP. Unlike OLS, RE accounts for the repeated measures structure by introducing random intercepts and/or random slopes.
+
+* **REWB**: would provide an estimate of the average change in SYSBP associated with BPMEDS within-subjects and between-subjects. The within-subject estimates would not be affected by unobserved time-invariant bias and the model would control for time-varying variables available in the data set. Given the patterns shown in graph 1, REWB might be a good choice if an analyst would like to describe the association between SYSBP and BPMEDS in terms of within- and between subject effects in a single model.
+
+<br>
+
+# Results: Model Estimates
+
+This section presents the model results. To facilitate comparison, models 1-5 were fit using the same time-varying predictors. Only model 6 included both time-varying predictors and time-invariant predictors. 
+
+The models specified were:
+
+**1. OLS:**
+$$
+SYSBP_{it} =  \beta_0 + \beta_1CIGPDAY_{it} + \beta_2AGE_{it}  + \beta_3BMI_{it} + \beta_4TOTCHOL_{it} + \beta_5GLUCOSE_{it} + \beta_6BPMEDS_{it}
+$$
+<br>
+**2. FE: **
+$$
+SYSBP_{it}^* =  \beta_1CIGPDAY_{it}^* + \beta_2AGE_{it}^*  + \beta_3BMI_{it}^* + \beta_4TOTCHOL_{it}^* + \beta_5GLUCOSE_{it}^* + \beta_6BPMEDS_{itt}^* 
+$$
+where * is the subject-centered variable. For example, $SYSBP_{it}^* = SYSBP_{it} - \overline{SYSBP_{it}}$.
+
+<br>
+
+**3. RE with random intercepts:**
+$$
+SYSBP_{it} =  \beta_0 + \beta_1CIGPDAY_{it} + \beta_2AGE_{it}  + \beta_3BMI_{it} + \beta_4TOTCHOL_{it} + \beta_5GLUCOSE_{it} + \beta_6BPMEDS_{it} + \alpha_{0i}
+$$
+<br>
+
+**4. REWB random intercepts only:**
+$$
+SYSBP_{it} =  \beta_0 +
+\beta_{1W}CIGPDAY_{it}^* +  \beta_{1B}\overline{CIGPDAY_{it}} + \beta_{2W}AGE_{it}^*  + \beta_{2B}\overline{AGE_{it}} + \\
+\beta_{3W}BMI_{it}^* + \beta_{2B}\overline{BMI_{it}} + \beta_{4W}TOTCHOL_{it}^* + \beta_{2B}\overline{TOTCHOL_{it}} + \\
+\beta_{5W}GLUCOSE_{it}^* + \beta_{2B}\overline{GLUCOSE_{it}} + 
+\beta_{6W}BPMEDS_{it}^* + \beta_{2B}\overline{BPMEDS_{it}}+ \\
+\alpha_{0i}
+$$
+Here, the model separates the within-subject and between-subject effect for each variable in the model.  The predictors with $*$ are the difference between the subject's response at time $t$ and the subject's mean. The predictors with $\overline{X}$ si the subject's mean. The model allows only for random intercepts.
+
+**5. REWB random intercepts and slopes:**
+$$
+SYSBP_{it} =  \beta_0 +
+\beta_{1W}CIGPDAY_{it}^* +  \beta_{1B}\overline{CIGPDAY_{it}} + \beta_{2W}AGE_{it}^*  + \beta_{2B}\overline{AGE_{it}} + \\
+\beta_{3W}BMI_{it}^* + \beta_{3B}\overline{BMI_{it}} + \beta_{4W}TOTCHOL_{it}^* + \beta_{4B}\overline{TOTCHOL_{it}} + \\
+\beta_{5W}GLUCOSE_{it}^* + \beta_{5B}\overline{GLUCOSE_{it}} + 
+\beta_{6W}BPMEDS_{it}^* + \beta_{6B}\overline{BPMEDS_{it}}+ \\
+\alpha_{0i} + \alpha_{1i}BPMEDS_{it}^*
+$$
+Like model 4, model 5 follows the same REWB structure using only time-varying predictors. However, in addition to random intercepts, it allows for random slopes of $BPMEDS_{it}^*$
+
+
+**6. REWB random intercepts and slopes and time-invariant predictors:**
+$$
+SYSBP_{it} =  \beta_0 +
+\beta_{1W}CIGPDAY_{it}^* +  \beta_{1B}\overline{CIGPDAY_{it}} + \beta_{2W}AGE_{it}^*  + \beta_{2B}\overline{AGE_{it}} + \\
+\beta_{3W}BMI_{it}^* + \beta_{3B}\overline{BMI_{it}} + \beta_{4W}TOTCHOL_{it}^* + \beta_{4B}\overline{TOTCHOL_{it}} + \\
+\beta_{5W}GLUCOSE_{it}^* + \beta_{5B}\overline{GLUCOSE_{it}} + 
+\beta_{6W}BPMEDS_{it}^* + \beta_{6B}\overline{BPMEDS_{it}}+ \\
+\beta_7SEX_i + \beta_8EDUC_i + \\
+\alpha_{0i} + \alpha_{1i}BPMEDS_{it}^*
+$$
+Unlike prior models that used only time-varying predictors, this model includes two time-invariant predictors: SEX and EDUC. 
+
+The  table of results (in appendix) contains results worth highlighting. First, across models, the estimates for most predictors are similar. For example, the estimates for age for OLS, FE, RE is	0.685, 0.788,	0.733, respectively. The REWB models produce similar results. In general, this similarity suggests there is little difference between the within-subject and between-subject effect for most predictors. Second, the RE estimates is often between the OLS and FE estimate. Given that RE collapses the within-subject and between-subject effect into a single estimate, this pattern is intuitive. While each estimate must be interpreted according to the model specified, these results suggest little difference in estimates between models for most variables. 
+
+```{r OLS,  echo=FALSE, message=FALSE, warning=FALSE}
+#####################################################################################################################
+# create lists to score performance metrics
+#####################################################################################################################
+aic_list<-data.frame()
+rmse_list<-data.frame()
+
+#####################################################################################################################
+# Model 1) OLS - Ignore the Repeated Measures (not recommended)
+#####################################################################################################################
+# set up common model formula
+target <- "SYSBP"
+predictors <-c('CIGPDAY', 'AGE', 'BMI', 'TOTCHOL', 'GLUCOSE', 'BPMEDS') 
+model_formula<- as.formula(paste(target, " ~ ", paste(predictors, collapse= "+")))
+
+# a) run OLS model
+model_ols <- lm(model_formula, data = df_train)
+
+#b) evaluate model performance - metrics
+model_aic<-AIC(model_ols)
+new_row <- data.frame(method = "model_ols", aic = model_aic)
+aic_list<- rbind(aic_list, new_row)
+
+# c) evaluate model performance - in-sample v. out-sample
+df_train$pred_model_ols<-predict(model_ols, newdata = df_train)
+df_test$pred_model_ols<-predict(model_ols, newdata = df_test)
+
+insample_rmse<- sqrt(mean((df_train$SYSBP - df_train$pred_model_ols)^2))
+outsample_rmse<-sqrt(mean((df_test$SYSBP - df_test$pred_model_ols)^2))
+
+new_row <- data.frame(method = "ols", 
+                      insample_rmse = insample_rmse,
+                      outsample_rmse = outsample_rmse)
+rmse_list <- rbind(rmse_list, new_row)
+```
+
+```{r FE,  echo=FALSE, message=FALSE, warning=FALSE}
+####################################################
+# Model 2) Fixed effects
+####################################################
+# a) run model
+model_fx <- plm(model_formula,
+                data = df_train, 
+                index = c("RANDID"),
+                model = "within") 
+
+#b) evaluate model performance - metrics
+aicbic_plm <- function(object, criterion) {
+  sp = summary(object)
+  
+  if((class(object)[1]=="plm") | (class(object)[1]=="pggls")){
+    u.hat <- residuals(sp) # extract residuals
+    df <- cbind(as.vector(u.hat), attr(u.hat, "index"))
+    names(df) <- c("resid", "Country", "Time")
+    c = length(levels(df$Country)) # extract country dimension 
+    t = length(levels(df$Time)) # extract time dimension 
+    np = length(sp$coefficients[,1]) # number of parameters
+    n.N = nrow(sp$model) # number of data
+    s.sq  <- log( (sum(u.hat^2)/(n.N))) # log sum of squares
+    
+    # effect = c("individual", "time", "twoways", "nested"),
+    # model = c("within", "random", "ht", "between", "pooling", "fd")
+    
+    # I am making example only with some of the versions:
+    
+    if (sp$args$model == "within" & sp$args$effect == "individual"){
+      n = c
+      np = np+n+1 # update number of parameters
+    }
+    
+    if (sp$args$model == "within" & sp$args$effect == "time"){
+      T = t
+      np = np+T+1 # update number of parameters
+    }
+    
+    if (sp$args$model == "within" & sp$args$effect == "twoways"){
+      n = c
+      T = t
+      np = np+n+T # update number of parameters
+    }
+    aic <- round(       2*np  +  n.N * (  log(2*pi) + s.sq  + 1 ),1)
+    bic <- round(log(n.N)*np  +  n.N * (  log(2*pi) + s.sq  + 1 ),1)
+    
+    if(criterion=="AIC"){
+      names(aic) = "AIC"
+      return(aic)
+    }
+    if(criterion=="BIC"){
+      names(bic) = "BIC"
+      return(bic)
+    }
+  }
+}
+model_aic<-aicbic_plm(model_fx, "AIC")
+new_row <- data.frame(method = "model_fx", aic = model_aic)
+aic_list<- rbind(aic_list, new_row)
+
+# c) evaluate model performance - in-sample v. out-sample
+df_train$pred_model_fx <- predict(model_fx)
+insample_rmse<- sqrt(mean((df_train$SYSBP - df_train$pred_model_fx)^2))
+
+new_row <- data.frame(method = "fx", 
+                      insample_rmse = insample_rmse)
+rmse_list <- bind_rows(rmse_list, new_row)
+```
+
+```{r RE_rand_inter,  echo=FALSE, message=FALSE, warning=FALSE}
+#####################################################################################################################
+# Model 3) Random Effects Model (random intercepts) with time varying variables only
+#####################################################################################################################
+# a) run model
+model_rf_intercept_timevar <-lmer(SYSBP ~ CIGPDAY + AGE + BMI + TOTCHOL + GLUCOSE + BPMEDS + (1| RANDID), 
+                             data=df_train)
+
+#b) evaluate model performance - metrics
+model_aic<-AIC(model_rf_intercept_timevar)
+new_row <- data.frame(method = "model_rf_intercept_timevar", aic = model_aic)
+aic_list<- rbind(aic_list, new_row)
+
+# c) evaluate model performance - in-sample v. out-sample
+df_train$pred_model_rf_intercept_timevar <-predict(model_rf_intercept_timevar, newdata = df_train)
+df_test$pred_model_rf_intercept_timevar<-predict(model_rf_intercept_timevar, newdata = df_test, re.form = ~0)
+
+insample_rmse<-sqrt(mean((df_train$SYSBP - df_train$pred_model_rf_intercept_timevar)^2))
+outsample_rmse<-sqrt(mean((df_test$SYSBP - df_test$pred_model_rf_intercept_timevar)^2))
+
+new_row <- data.frame(method = "rf_intercept_timevar", 
+                      insample_rmse = insample_rmse,
+                      outsample_rmse = outsample_rmse)
+rmse_list <- bind_rows(rmse_list, new_row)
+```
+
+```{r REWB_rand_inter,  echo=FALSE, message=FALSE, warning=FALSE}
+############################################################################
+# # Model 4) Within and Between effect model (no random slope)
+############################################################################
+create_cols_rewb <- function(df) {
+  means_df <- df %>%
+    group_by(RANDID) %>%
+    summarise(mean_CIGPDAY = mean(CIGPDAY),
+              mean_AGE = mean(AGE),
+              mean_BMI = mean(BMI),
+              mean_TOTCHOL = mean(TOTCHOL),
+              mean_GLUCOSE = mean(GLUCOSE),
+              mean_BPMEDS = mean(BPMEDS))
+  
+  nrow(df)  
+  df<-left_join(df, means_df, by= 'RANDID')
+  nrow(df)  
+  
+  df$diff_CIGPDAY <- df$CIGPDAY - df$mean_CIGPDAY
+  df$diff_AGE <- df$AGE - df$mean_AGE
+  df$diff_BMI <- df$BMI - df$mean_BMI 
+  df$diff_TOTCHOL <- df$TOTCHOL - df$mean_TOTCHOL
+  df$diff_GLUCOSE <- df$GLUCOSE - df$mean_GLUCOSE
+  df$diff_BPMEDS <- df$BPMEDS - df$mean_BPMEDS
+  
+  return (df)
+}
+
+# prep data for rewb model
+df_train<- create_cols_rewb(df_train)
+df_test<- create_cols_rewb(df_test)
+
+# a) run model 
+model_rewb_intercept_timevar <-lmer(SYSBP ~ diff_CIGPDAY + mean_CIGPDAY +
+                                      diff_AGE + mean_AGE + 
+                                      diff_BMI + mean_BMI + 
+                                      diff_TOTCHOL + mean_TOTCHOL+
+                                      diff_GLUCOSE + mean_GLUCOSE +
+                                      diff_BPMEDS + mean_BPMEDS + 
+                                      (1 | RANDID), data=df_train)
+
+# b) evaluate model performance - metrics
+model_aic<- AIC(model_rewb_intercept_timevar)
+new_row <- data.frame(method = "model_rewb_intercept_timevar", aic = model_aic)
+aic_list<- rbind(aic_list, new_row)
+
+# c) evaluate model performance - in-sample v. out-sample
+df_train$pred_model_rewb_intercept_timevar <-predict(model_rewb_intercept_timevar, newdata = df_train)
+df_test$pred_model_rewb_intercept_timevar <-predict(model_rewb_intercept_timevar, newdata = df_test, re.form = ~0)
+
+insample_rmse<-sqrt(mean((df_train$SYSBP - df_train$pred_model_rewb_intercept_timevar)^2))
+outsample_rmse<-sqrt(mean((df_test$SYSBP - df_test$pred_model_rewb_intercept_timevar)^2))
+
+new_row <- data.frame(method = "rewb_intercept_timevar", 
+                      insample_rmse = insample_rmse,
+                      outsample_rmse = outsample_rmse)
+rmse_list <- bind_rows(rmse_list, new_row)
+```
+
+```{r REWB_rand_inter_slope,  echo=FALSE, message=FALSE, warning=FALSE}
+#####################################################################################################################
+# Model 5) REWB with time varying predictors (intercepts and slopes)
+#####################################################################################################################
+# a) run model
+model_rewb_interceptslopes_timevar <- lmer(SYSBP ~ diff_CIGPDAY + mean_CIGPDAY +
+                                             diff_AGE + mean_AGE + 
+                                             diff_BMI + mean_BMI + 
+                                             diff_TOTCHOL + mean_TOTCHOL+
+                                             diff_GLUCOSE + mean_GLUCOSE +
+                                             diff_BPMEDS + mean_BPMEDS +
+                                             (1 + diff_BPMEDS| RANDID), data = df_train)
+
+# b) evaluate model performance - metrics
+model_aic<- AIC(model_rewb_interceptslopes_timevar)
+new_row <- data.frame(method = "model_rewb_interceptslopes_timevar", aic = model_aic)
+aic_list<- rbind(aic_list, new_row)
+
+# c) evaluate model performance - in-sample v. out-sample
+df_train$pred_model_rewb_interceptslopes_timevar <-predict(model_rewb_interceptslopes_timevar, newdata = df_train)
+df_test$pred_model_rewb_interceptslopes_timevar <-predict(model_rewb_interceptslopes_timevar, newdata = df_test, re.form = ~0)
+
+insample_rmse<-sqrt(mean((df_train$SYSBP - df_train$pred_model_rewb_interceptslopes_timevar)^2))
+outsample_rmse<-sqrt(mean((df_test$SYSBP - df_test$pred_model_rewb_interceptslopes_timevar)^2))
+
+new_row <- data.frame(method = "rewb_interceptslopes_timevar", 
+                      insample_rmse = insample_rmse,
+                      outsample_rmse = outsample_rmse)
+rmse_list <- bind_rows(rmse_list, new_row)
+```
+
+```{r REWB_rand_inter_slope_timeinvar,  echo=FALSE, message=FALSE, warning=FALSE}
+#####################################################################################################################
+# Model 6) REWB with time variant and invariant predictors (intercepts and slopes only)
+#####################################################################################################################
+# a) run model
+model_rewb_interceptslopes_all <- lmer(SYSBP ~ diff_CIGPDAY + mean_CIGPDAY +
+                                   diff_AGE + mean_AGE + 
+                                   diff_BMI + mean_BMI + 
+                                   diff_TOTCHOL + mean_TOTCHOL+
+                                   diff_GLUCOSE + mean_GLUCOSE +
+                                   diff_BPMEDS + mean_BPMEDS + 
+                                   SEX + EDUC + (1 + diff_BPMEDS| RANDID), data = df_train)
+
+#b) evaluate model performance - metrics
+model_aic<-AIC(model_rewb_interceptslopes_all)
+new_row <- data.frame(method = "model_rewb_interceptslopes_all", aic = model_aic)
+aic_list<- rbind(aic_list, new_row)
+
+# d) evaluate model performance - in-sample v. out-sample
+df_train$pred_model_rewb_interceptslopes_all <-predict(model_rewb_interceptslopes_all, newdata = df_train)
+df_test$pred_model_rewb_interceptslopes_all<-predict(model_rewb_interceptslopes_all, newdata = df_test, re.form = ~0)
+
+insample_rmse<-sqrt(mean((df_train$SYSBP - df_train$pred_model_rewb_interceptslopes_all)^2))
+outsample_rmse<-sqrt(mean((df_test$SYSBP - df_test$pred_model_rewb_interceptslopes_all)^2))
+
+new_row <- data.frame(method = "rewb_interceptslopes_all", 
+                      insample_rmse = insample_rmse,
+                      outsample_rmse = outsample_rmse)
+rmse_list <- bind_rows(rmse_list, new_row)
+```
+
+```{r summary_coef,  echo=FALSE, message=FALSE, warning=FALSE}
+# ols with robust SE
+summary_model_ols_robustse <- coeftest(model_ols, vcovCR(model_ols, type = "CR1", cluster = df_train$RANDID))
+summary_model_ols_robustse <- summary_model_ols_robustse[,] %>% 
+  as_tibble() %>%
+  mutate(predictor = rownames(summary_model_ols_robustse))
+summary_model_ols_robustse$method_name <- c(rep("ols_robustse", nrow(summary_model_ols_robustse)))
+
+# fx with regular SE
+summary_model_fx <- as.data.frame(summary(model_fx)$coefficients)
+summary_model_fx <- cbind(predictor = rownames(summary_model_fx), summary_model_fx)
+rownames(summary_model_fx) <- 1:nrow(summary_model_fx)
+summary_model_fx$method_name <- c(rep("fx", nrow(summary_model_fx)))
+summary_model_fx <- summary_model_fx %>%
+  rename("t value" = "t-value")
+
+# random effects intercept only time varying
+summary_model_rf_intercept_timevar <- as.data.frame(summary(model_rf_intercept_timevar)$coefficients)
+summary_model_rf_intercept_timevar <- cbind(predictor = rownames(summary_model_rf_intercept_timevar), summary_model_rf_intercept_timevar)
+rownames(summary_model_rf_intercept_timevar) <- 1:nrow(summary_model_rf_intercept_timevar)
+summary_model_rf_intercept_timevar$method_name <- c(rep("rf_intercept_timevar", nrow(summary_model_rf_intercept_timevar)))
+
+# RFWB intercept time varying 
+summary_model_rewb_intercept_timevar <- as.data.frame(summary(model_rewb_intercept_timevar)$coefficients)
+summary_model_rewb_intercept_timevar <- cbind(predictor = rownames(summary_model_rewb_intercept_timevar), summary_model_rewb_intercept_timevar)
+rownames(summary_model_rewb_intercept_timevar) <- 1:nrow(summary_model_rewb_intercept_timevar)
+summary_model_rewb_intercept_timevar$method_name <- c(rep("rewb_intercept_timevar", nrow(summary_model_rewb_intercept_timevar)))
+
+# RFWB intercept and slope time varying 
+summary_model_rewb_interceptslopes_timevar <- as.data.frame(summary(model_rewb_interceptslopes_timevar)$coefficients)
+summary_model_rewb_interceptslopes_timevar <- cbind(predictor = rownames(summary_model_rewb_interceptslopes_timevar), summary_model_rewb_interceptslopes_timevar)
+rownames(summary_model_rewb_interceptslopes_timevar) <- 1:nrow(summary_model_rewb_interceptslopes_timevar)
+summary_model_rewb_interceptslopes_timevar$method_name <- c(rep("rewb_interceptslope_timevar", nrow(summary_model_rewb_interceptslopes_timevar)))
+
+# RFWB intercept and slope time varying and time invariant
+summary_model_rewb_interceptslopes_all <- as.data.frame(summary(model_rewb_interceptslopes_all)$coefficients)
+summary_model_rewb_interceptslopes_all <- cbind(predictor = rownames(summary_model_rewb_interceptslopes_all), summary_model_rewb_interceptslopes_all)
+rownames(summary_model_rewb_interceptslopes_all) <- 1:nrow(summary_model_rewb_interceptslopes_all)
+summary_model_rewb_interceptslopes_all$method_name <- c(rep("rewb_interceptslope_all", nrow(summary_model_rewb_interceptslopes_all)))
+
+coeff_summary_df <- bind_rows(summary_model_ols_robustse,
+                          summary_model_fx, 
+                          summary_model_rf_intercept_timevar,
+                          summary_model_rewb_intercept_timevar,
+                          summary_model_rewb_interceptslopes_timevar,
+                          summary_model_rewb_interceptslopes_all)
+
+
+coeff_summary_df <- coeff_summary_df %>%
+  rename("estimate" = "Estimate",
+         "se" = "Std. Error") %>%
+  mutate(
+    lower = estimate - 1.96 * se,
+    upper = estimate + 1.96 * se
+  )
+```
+
+However, that statement does not hold true for BPMEDS. The estimated associations between BPMEDS and SYSBP does vary substantially across models. To contrast these differences, Figure 2 shows the estimated coefficients for BPMEDS across the models. The OLS, FE and RE estimate is on the top of the y-axis. The mean-centered BPMEDS (diff_BPMEDS) and mean BPMEDS (mean_BPMEDS) used in the REWB models follow. The x-axis shows the effect size along with its corresponding 95%CI. To start, the estimates on BPMEDS for OLS, FE, and RE are 20.8, -2.9, 7.03 respectively. The OLS estimate indicates that SYSBP is about 20.8 points higher for records of patients on BPMEDS (BPMEDS=1) compared to records of patients not on BPMEDS(BPMEDS=0). This relationship is reflected in the overall positive slope in Figure 1. In contrast, FE finds that there is a negative within-subject effect of BPMEDS. For subjects whose BPMEDS changed during the study, SYSBP decreased by 2.9 points when going from BPMEDS=0 to BPMEDS=1. This results is also reflected in Figure 1 with the slope of lines no_yes_meds being less positive than the overall and yes_no_meds being negative. As expected, the RE collapses both within and between subject effects into a single estimate and is between the OLS and FE result.
+
+Figure 2 highlights the benefit of using REWB models: isolating the within-subject and between subject effects while accounting for time-invariant correlations. Like FE, the REWB models identify a negative within subject association between SYSBP and BPMEDS. In fact, estimate of the REWB models on diff_BPMEDS match the FE model almost exactly. Additionally, the estimate for mean_BPMEDS indicates substantial difference in the effect of BPMEDS on SYSBP between subjects in the data. This difference between subjects would have been obfuscated in the RE estimate. Across REWB models, the estimates are similar. The overall effect of diff_BPMEDS or mean_BPMEDS do not change substantially when random slopes or  time-invariant predictors are included in the models. As analysts decide which method to use, REWB can provide some of the benefits of FE and RE framework in a single model.
+
+```{r summary_graph,  echo=FALSE, message=FALSE, warning=FALSE, fig.align="center", fig.cap="Figure 2"}
+#keep only BPMEDS
+coeff_summary_df <- coeff_summary_df[coeff_summary_df$predictor %in% c('BPMEDS', 'diff_BPMEDS', 'mean_BPMEDS'),]
+
+coeff_summary_df<- coeff_summary_df %>%
+  mutate(method_name = case_when(
+    method_name == 'ols_robustse' ~ "OLS",
+    method_name == 'fx' ~ 'FE',
+    method_name == 'rf_intercept_timevar' ~ 'RE',
+    method_name == 'rewb_intercept_timevar' ~ 'REWB rand intercept',
+    method_name == 'rewb_interceptslope_timevar' ~ 'REWB rand intercept slope',
+    method_name == 'rewb_interceptslope_all' ~ 'REWB w time-invariant'))
+
+# Plot 
+predictor_order <- c("BPMEDS", "diff_BPMEDS", "mean_BPMEDS")
+method_order<- c("OLS", 
+                 "FE",
+                 "RE",
+                 "REWB rand intercept",
+                 "REWB rand intercept slope",
+                 "REWB w time-invariant")
+
+coeff_summary_df <- coeff_summary_df %>%
+  dplyr::mutate(
+    predictor   = factor(predictor, levels = predictor_order),
+    method_name = factor(method_name, levels = method_order)
+  )
+
+ggplot(coeff_summary_df, aes(x = estimate, y = predictor,
+                             color = method_name)) +
+  geom_point(position = position_dodge(width = 0.5)) +
+  geom_errorbarh(aes(xmin = lower, xmax = upper),
+                 height = 0.2,
+                 position = position_dodge(width = 0.5)) +
+  labs(x = "Coefficient Estimate", y = "Predictor",
+       color = "Method") +
+  # Flip axis order if you want top-to-bottom
+  scale_y_discrete(limits = rev(predictor_order)) +
+  scale_color_discrete(limits = method_order) +
+  theme_minimal()
+```
+
+
+# Results: Model Performance
+
+The AIC and RMSE plots below show additional differences between the specified models. Figure 3 shows the AIC on the training data. Across the models, the results are similar. By a small amount, OLS has the highest AIC and FE has the lowest, suggesting the worst and best fit respectively. Other model results fall between OLS and FE. Given that OLS does not account for subject specific heterogeneity and FE fits a specific parameter for each subject, the results are intuitive. 
+
+```{r summary_aic,  echo=FALSE, message=FALSE, warning=FALSE, fig.align="center", fig.cap="Figure 3"}
+####################################################################################
+# Summary: Intime AIC
+####################################################################################
+aic_list$method <- substr(aic_list$method, 7, nchar(aic_list$method))
+
+method_order <- c("ols", "fx", "rf_intercept_timevar",
+                  "rewb_intercept_timevar",
+                  "rewb_interceptslopes_timevar","rewb_interceptslopes_all")
+
+aic_list <- aic_list %>%
+  dplyr::mutate(method = factor(method, levels = method_order))
+
+ggplot(aic_list, aes(x=method,  y=aic))+ 
+  geom_bar(stat = "identity", width=0.7) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        plot.title = element_text(hjust = 0.5)) + 
+  geom_text(aes(label = round(aic,2) ), vjust=3, size=3, color="white") +
+  coord_cartesian(ylim=c(30000,80000)) +
+  ggtitle("AIC")
+```  
+
+In contrast, the RMSE results in Figure 4 shows notable differences between the models. First, in training, OLS shows the highest RMSE and FE the lowest. Again, since OLS does not account for subject heterogeneity while other models do, this result is expected. Because FE fits parameters for each subject in the sample, it performs well in training, but cannot make inferences about new observations. As a result, the test RMSE is missing from the chart.  Second, RE and REWBs models show similar RMSE to FE in training. Accounting for subject heterogenity (in their own way) allows these models to achieve a better fit to the training data than OLS. Third, when making out-of-sample predictions, OLS, RE, and REWB show similar performance. To make out of sample predictions, RE and REWB ignore their random components. As a result, their performance is similar to OLS. This behavior also contributes to the relatively large gap between their performance in training and test sets. Despite their differences, these models achieve similar out-of-sample results. 
+
+```{r summary_rmse,  echo=FALSE, message=FALSE, warning=FALSE, fig.align="center", fig.cap="Figure 4"}
+####################################################################################
+# Summary: in sample RMSE v out of sample RMSE
+####################################################################################
+rmse_list_long <- rmse_list %>%
+  pivot_longer(cols = c(insample_rmse, outsample_rmse), 
+               names_to = "sample", 
+               values_to = "Value")
+rmse_list_long$sample <- substr(rmse_list_long$sample, 1, nchar(rmse_list_long$sample) - 5)
+
+method_order <- c("ols", "fx", "rf_intercept_timevar",
+                  "rewb_intercept_timevar",
+                  "rewb_interceptslopes_timevar","rewb_interceptslopes_all")
+rmse_list_long <- rmse_list_long %>%
+  dplyr::mutate(method = factor(method, levels = method_order))
+
+ggplot(rmse_list_long, aes(x = method, y = Value, fill = sample)) +
+  geom_bar(stat = "identity", 
+           width=0.4,
+           position = position_dodge()) +
+  labs(x = "Method", y = "Value") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        plot.title = element_text(hjust = 0.5)) +
+  geom_text(aes(label = round(Value,2), y = Value + 1),
+            position = position_dodge(width = 0.9),
+            vjust = -0.2,
+            size = 3,
+            angle =45) +
+  coord_cartesian(ylim=c(0,25)) +
+  ggtitle("RMSE")
+```
+
+## Conclusion: 
+
+Educational resources often present FE and RE as alternatives that analysts can choose from when analyzing longitudinal data. Resources often do not emphasize that each method estimates different quantities. Which method is most appropriate should be based on the researcher's objective.  This post showed that these methods can result very different estimates. 
+
+# Appendix: 
+```{r summary_table,  echo=FALSE, message=FALSE, warning=FALSE}
+modelsummary(list("OLS" = model_ols,
+                  "FE" = model_fx,
+                  "RE" = model_rf_intercept_timevar,
+                  "REWB rand intercept" = model_rewb_intercept_timevar,
+                  "REWB rand intercept slope" = model_rewb_interceptslopes_timevar,
+                  "REWB w time-invariant" = model_rewb_interceptslopes_all),
+              gof_map = NA)
+```
+
